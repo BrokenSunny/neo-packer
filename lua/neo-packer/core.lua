@@ -111,25 +111,25 @@ local function rewrite_runtimepath()
 end
 
 local function get_sorted_depends(spec_map, depend)
-	local depend_priority_map = {}
-	local depend_priority_list = {}
+	local priority_map = {}
+	local priority_list = {}
 
 	for _, name in ipairs(depend) do
 		local dp = spec_map[name]
 		local priority = dp.data.priority or 50
-		if not depend_priority_map[priority] then
-			depend_priority_map[priority] = { name, priority = priority }
-			table.insert(depend_priority_list, depend_priority_map[priority])
+		if not priority_map[priority] then
+			priority_map[priority] = { name, priority = priority }
+			table.insert(priority_list, priority_map[priority])
 		else
-			table.insert(depend_priority_map[priority], name)
+			table.insert(priority_map[priority], name)
 		end
 	end
-	table.sort(depend_priority_list, function(a, b)
+	table.sort(priority_list, function(a, b)
 		return a.priority > b.priority
 	end)
 
 	local depends = {}
-	for _, dps in ipairs(depend_priority_list) do
+	for _, dps in ipairs(priority_list) do
 		for _, name in ipairs(dps) do
 			table.insert(depends, name)
 		end
@@ -260,20 +260,14 @@ local function build_specs(sources)
 	return _specs
 end
 
-function M.load(name)
-	local plugin = M.plugin_map[name]
-	if not plugin then
-		return
-	end
-
+function M.load(plugin)
 	for _, depend_name in ipairs(plugin._depend) do
 		local dp = M._plugin_map[depend_name]
 		if not dp.loaded then
 			M.load(dp.name)
 		end
 	end
-
-	pcall(vim.cmd.packadd, name)
+	pcall(vim.cmd.packadd, plugin.name)
 	if type(plugin.config) == "function" then
 		plugin.config()
 	end
@@ -301,7 +295,9 @@ function M.packadd(plugins)
 			local plugin = plug.spec.data
 			plugin.name = plug.spec.name
 			plugin.path = plug.path
+			-- This name is pack name(for pack name find plugin)
 			M.plugin_map[plugin.name] = plugin
+			-- This name is source name(for depend find plugin)
 			M._plugin_map[plugin._name] = plugin
 
 			if plugin.startup then

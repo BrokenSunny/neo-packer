@@ -183,7 +183,7 @@ function M.register(plugin)
 
 	for lhs, data in pairs(keys) do
 		parse_keymap(lhs, data, function()
-			require("neo-packer.core").load(plugin.name)
+			require("neo-packer.core").load(plugin)
 		end)
 	end
 end

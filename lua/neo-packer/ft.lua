@@ -24,7 +24,7 @@ local function register(plugin)
 	vim.api.nvim_create_autocmd("FileType", {
 		pattern = plugin.ft,
 		callback = function()
-			require("neo-packer.core").load(plugin.name)
+			require("neo-packer.core").load(plugin)
 		end,
 		once = true,
 	})

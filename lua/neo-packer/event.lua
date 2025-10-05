@@ -41,7 +41,7 @@ function M.register(plugin)
 	for _, event in ipairs(events) do
 		local opt = {
 			callback = function()
-				require("neo-packer.core").load(plugin.name)
+				require("neo-packer.core").load(plugin)
 			end,
 			pattern = event.pattern,
 			once = true,
