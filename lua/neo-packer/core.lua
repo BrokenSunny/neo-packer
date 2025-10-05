@@ -4,15 +4,18 @@ M._plugin_map = {}
 M.plugin_runtimepath = {}
 M.plugin_runtimepath_map = {}
 
+-- clean something no need in plugin
 local function clean_plugin(plugin)
 	plugin._depend = nil
 	plugin.is_pending = nil
 end
 
+-- clean lazy plugin load handle
 local function clean_lazy_handle(plugin)
 	require("neo-packer.cmd").clean(plugin)
 end
 
+-- register lazy plugin load handle
 local function register_lazy_plugin(plugin)
 	require("neo-packer.cmd").register(plugin)
 	require("neo-packer.keys").register(plugin)
@@ -21,24 +24,30 @@ local function register_lazy_plugin(plugin)
 	require("neo-packer.colorscheme").register(plugin)
 end
 
-local function config_plugin(plugin)
-	if not plugin then
-		return
-	end
-	M.plugin_runtimepath_map[plugin.path] = nil
+-- execute plugin.config
+local function config(plugin)
 	if type(plugin.config) == "function" then
 		plugin.config()
-		clean_plugin(plugin)
 	end
 end
 
+local function on_plugin_source_post(plugin)
+	M.plugin_runtimepath_map[plugin.path] = nil
+	config(plugin)
+	clean_plugin(plugin)
+end
+
+-- Some plugins no "plugin/*.lua" dir
+-- Can't trigger source post. And Can't execute plugin.config
+-- So the fisrt plugin which have "plugin/*.lua" need to fix pre plugins to execute plugin.config
 local function fix_start_missing_plugin_dir(start, finish)
 	local paths = vim.list_slice(M.plugin_runtimepath, start, finish)
 	for _, path in ipairs(paths) do
-		config_plugin(M.plugin_runtimepath_map[path].plugin)
+		on_plugin_source_post(M.plugin_runtimepath_map[path].plugin)
 	end
 end
 
+-- Same as above, but help next plugin
 local function fix_next_missing_plugin_dir(next)
 	if next > #M.plugin_runtimepath then
 		return
@@ -57,7 +66,7 @@ local function fix_next_missing_plugin_dir(next)
 	end
 
 	for _, data in ipairs(plugins) do
-		config_plugin(data.plugin)
+		on_plugin_source_post(data.plugin)
 	end
 end
 
@@ -69,7 +78,6 @@ local function on_source_post()
 			if vim.tbl_count(M.plugin_runtimepath_map) == 0 then
 				return true
 			end
-
 			local path = e.file:match("^(.-)/plugin/")
 			local data = M.plugin_runtimepath_map[path]
 			if data then
@@ -79,7 +87,7 @@ local function on_source_post()
 				end
 				data.finished = data.finished + 1
 				if data.finished == data.total then
-					config_plugin(data.plugin)
+					on_plugin_source_post(data.plugin)
 					fix_next_missing_plugin_dir(data.index + 1)
 				end
 			end
@@ -87,11 +95,22 @@ local function on_source_post()
 	})
 end
 
+-- packadd! {name} can't process priority: I sort plugin to packadd! {plugin_name}
+-- But seem at some time the runtimepath had sorted
+-- So I sort this has no effect
+-- So I need rewrite runtimepath
+--   1. get current runtimepath
+--   2. reset runtimepath
+--   3. get plugin sorted runtimepath
+--   4. insert 3. to 2.
+--   5. replaced the old rtp
 local function rewrite_runtimepath()
+	-- 1. get current runtimepath
 	local rtps = vim.opt.runtimepath:get()
 	local new_rtps = {}
-	local index
 
+	-- 2. reset runtimepath
+	local index
 	for _, path in ipairs(rtps) do
 		if not M.plugin_runtimepath_map[path] then
 			table.insert(new_rtps, path)
@@ -101,15 +120,20 @@ local function rewrite_runtimepath()
 		end
 	end
 
+	-- 3
+	-- 4.
 	if index then
 		for _, p in ipairs(M.plugin_runtimepath) do
 			table.insert(new_rtps, index + 1, p)
 			index = index + 1
 		end
 	end
+
+	-- 5.
 	vim.opt.runtimepath = new_rtps
 end
 
+-- depend need to be sorted by priority(just depend name or not depend spec, Because spec !=== plugin)
 local function get_sorted_depends(spec_map, depend)
 	local priority_map = {}
 	local priority_list = {}
@@ -138,6 +162,7 @@ local function get_sorted_depends(spec_map, depend)
 	return depends
 end
 
+-- When a plugin need to startup, so all depends(ALL) need to marked startup
 local function set_depend_startup(spec_map, depends)
 	local next = {}
 
@@ -155,6 +180,7 @@ local function set_depend_startup(spec_map, depends)
 	end
 end
 
+--- Change single to table<single>
 local function normalize(plugin)
 	plugin.cmd = require("neo-packer.cmd").normalize(plugin.cmd)
 	plugin.ft = require("neo-packer.ft").normalize(plugin.ft)
@@ -164,7 +190,7 @@ local function normalize(plugin)
 	plugin.depend = require("neo-packer.depend").normalize(plugin.depend)
 end
 
-local function final_sort(spec_map, spec, _specs)
+local function low_priority_depend_up_plugin(spec_map, spec, _specs)
 	if spec.data.is_pending then
 		return
 	end
@@ -173,7 +199,7 @@ local function final_sort(spec_map, spec, _specs)
 	if #depends > 0 then
 		for _, name in ipairs(depends) do
 			local dp_spec = spec_map[name]
-			final_sort(spec_map, dp_spec, _specs)
+			low_priority_depend_up_plugin(spec_map, dp_spec, _specs)
 		end
 	end
 	spec.data.is_pending = true
@@ -252,7 +278,7 @@ local function build_specs(sources)
 	local _specs = {}
 	for _, spec in ipairs(specs) do
 		if spec.data.startup then
-			final_sort(spec_map, spec, _specs)
+			low_priority_depend_up_plugin(spec_map, spec, _specs)
 		else
 			table.insert(_specs, spec)
 		end
@@ -260,17 +286,19 @@ local function build_specs(sources)
 	return _specs
 end
 
-function M.load(plugin)
+local function load_depend(plugin)
 	for _, depend_name in ipairs(plugin._depend) do
 		local dp = M._plugin_map[depend_name]
 		if not dp.loaded then
 			M.load(dp.name)
 		end
 	end
+end
+
+function M.load(plugin)
+	load_depend(plugin)
 	pcall(vim.cmd.packadd, plugin.name)
-	if type(plugin.config) == "function" then
-		plugin.config()
-	end
+	config(plugin)
 	clean_lazy_handle(plugin)
 	clean_plugin(plugin)
 end
@@ -283,6 +311,20 @@ local function create_runtimepath_rewriter(total)
 			rewrite_runtimepath()
 		end
 	end
+end
+
+local function register_startup_plugin(plugin)
+	if plugin.lazy then
+		require("neo-packer.keys").add(plugin.keys)
+	end
+	table.insert(M.plugin_runtimepath, plugin.path)
+	M.plugin_runtimepath_map[plugin.path] = {
+		index = #M.plugin_runtimepath,
+		plugin = plugin,
+		total = #vim.fn.glob(plugin.path .. "*/plugin/**/*.lua", true, true),
+		finished = 0,
+	}
+	plugin.loaded = true
 end
 
 --- @param plugins Neo-packer.Plugin[]
@@ -301,28 +343,13 @@ function M.packadd(plugins)
 			M._plugin_map[plugin._name] = plugin
 
 			if plugin.startup then
-				if plugin.lazy then
-				end
-				table.insert(M.plugin_runtimepath, plugin.path)
-				M.plugin_runtimepath_map[plugin.path] = {
-					index = #M.plugin_runtimepath,
-					plugin = plugin,
-					total = #vim.fn.glob(plugin.path .. "*/plugin/**/*.lua", true, true),
-					finished = 0,
-				}
-				plugin.loaded = true
-				clean_plugin(plugin)
+				register_startup_plugin(plugin)
 			else
-				if plugin.lazy then
-					register_lazy_plugin(plugin)
-				end
+				register_lazy_plugin(plugin)
 			end
 			runtimepath_rewriter()
 		end,
 	})
-	vim.schedule(function()
-		vim.print(M.plugin_map)
-	end)
 end
 
 function M.update() end

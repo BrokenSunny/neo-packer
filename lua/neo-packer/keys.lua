@@ -125,12 +125,16 @@ local function set_keymap(lhs, rhs, mode, opts, load)
 		return
 	end
 
-	pcall(vim.keymap.set, mode, lhs, function()
-		load()
-		vim.keymap.set(mode, lhs, rhs, keymap_opts)
-		lhs = vim.api.nvim_replace_termcodes(lhs, true, true, true)
-		vim.api.nvim_feedkeys(lhs, "m", false)
-	end, keymap_opts)
+	if type(load) == "function" then
+		pcall(vim.keymap.set, mode, lhs, function()
+			load()
+			vim.keymap.set(mode, lhs, rhs, keymap_opts)
+			lhs = vim.api.nvim_replace_termcodes(lhs, true, true, true)
+			vim.api.nvim_feedkeys(lhs, "m", false)
+		end, keymap_opts)
+	else
+		pcall(vim.keymap.set, mode, lhs, rhs, keymap_opts)
+	end
 end
 
 local function parse_mode(lhs, rhs, modes, parent_opts, load)
@@ -185,6 +189,12 @@ function M.register(plugin)
 		parse_keymap(lhs, data, function()
 			require("neo-packer.core").load(plugin)
 		end)
+	end
+end
+
+function M.add(keys)
+	for lhs, data in pairs(keys) do
+		parse_keymap(lhs, data)
 	end
 end
 
