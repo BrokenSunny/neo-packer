@@ -1,5 +1,6 @@
 local M = {}
 M.plugin_map = {}
+M._plugin_map = {}
 M.plugin_runtimepath = {}
 M.plugin_runtimepath_map = {}
 
@@ -92,7 +93,7 @@ local function rewrite_runtimepath()
 	vim.opt.runtimepath = new_rtps
 end
 
-local function get_sorted_depend_specs(spec_map, depend)
+local function get_sorted_depends(spec_map, depend)
 	local depend_priority_map = {}
 	local depend_priority_list = {}
 
@@ -100,32 +101,33 @@ local function get_sorted_depend_specs(spec_map, depend)
 		local dp = spec_map[name]
 		local priority = dp.data.priority or 50
 		if not depend_priority_map[priority] then
-			depend_priority_map[priority] = { dp, priority = priority }
+			depend_priority_map[priority] = { name, priority = priority }
 			table.insert(depend_priority_list, depend_priority_map[priority])
 		else
-			table.insert(depend_priority_map[priority], dp)
+			table.insert(depend_priority_map[priority], name)
 		end
 	end
 	table.sort(depend_priority_list, function(a, b)
 		return a.priority > b.priority
 	end)
 
-	local depend_specs = {}
+	local depends = {}
 	for _, dps in ipairs(depend_priority_list) do
-		for _, dp in ipairs(dps) do
-			table.insert(depend_specs, dp)
+		for _, name in ipairs(dps) do
+			table.insert(depends, name)
 		end
 	end
 
-	return depend_specs
+	return depends
 end
 
-local function set_depend_startup(spec_map, depend_specs)
+local function set_depend_startup(spec_map, depends)
 	local next = {}
 
-	for _, dp in ipairs(depend_specs) do
+	for _, name in ipairs(depends) do
+		local dp = spec_map[name]
 		if not dp.data.startup then
-			table.insert(next, dp.data.depend_specs)
+			table.insert(next, dp.data._depend)
 			dp.data.startup = true
 		else
 		end
@@ -145,15 +147,16 @@ local function normalize(plugin)
 	plugin.depend = require("neo-packer.depend").normalize(plugin.depend)
 end
 
-local function final_sort(spec, _specs)
+local function final_sort(spec_map, spec, _specs)
 	if spec.data.is_pending then
 		return
 	end
 
-	local depend_specs = spec.data.depend_specs
-	if #depend_specs > 0 then
-		for _, dp_spec in ipairs(depend_specs) do
-			final_sort(dp_spec, _specs)
+	local depends = spec.data._depend
+	if #depends > 0 then
+		for _, name in ipairs(depends) do
+			local dp_spec = spec_map[name]
+			final_sort(spec_map, dp_spec, _specs)
 		end
 	end
 	spec.data.is_pending = true
@@ -222,17 +225,17 @@ local function build_specs(sources)
 	end
 
 	for _, spec in ipairs(specs) do
-		local depend_specs = get_sorted_depend_specs(spec_map, spec.data.depend)
-		spec.data.depend_specs = depend_specs
+		local depends = get_sorted_depends(spec_map, spec.data.depend)
+		spec.data._depend = depends
 		if spec.data.startup then
-			set_depend_startup(spec_map, depend_specs)
+			set_depend_startup(spec_map, depends)
 		end
 	end
 
 	local _specs = {}
 	for _, spec in ipairs(specs) do
 		if spec.data.startup then
-			final_sort(spec, _specs)
+			final_sort(spec_map, spec, _specs)
 		else
 			table.insert(_specs, spec)
 		end
@@ -246,11 +249,18 @@ function M._load(name)
 		return
 	end
 
-	for _, depend_spec in ipairs(plugin.depend_specs) do
+	for _, depend_name in ipairs(plugin._depend) do
+		local dp = M._plugin_map[depend_name]
+		if not dp.loaded then
+			M._load(dp.name)
+		end
 	end
 
 	require("neo-packer.cmd").clean(plugin)
 	pcall(vim.cmd.packadd, name)
+	if type(plugin.config) == "function" then
+		plugin.config()
+	end
 end
 
 --- @param plugins Neo-packer.Plugin[]
@@ -265,11 +275,13 @@ function M.load(plugins)
 			plugin.name = plug.spec.name
 			plugin.path = plug.path
 			M.plugin_map[plugin.name] = plugin
+			M._plugin_map[plugin._name] = plugin
 
 			if plugin.startup then
-				plugin.depend_specs = nil
+				plugin._depend = nil
 				if plugin.lazy then
 				end
+				plugin.loaded = true
 				table.insert(M.plugin_runtimepath, plugin.path)
 				M.plugin_runtimepath_map[plugin.path] = {
 					index = #M.plugin_runtimepath,
