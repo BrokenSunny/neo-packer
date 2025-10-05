@@ -52,7 +52,7 @@ local M = {}
 
 --- @param plugins Neo-packer.Plugin[]
 function M.setup(plugins)
-	require("neo-packer.core").load(plugins)
+	require("neo-packer.core").packadd(plugins)
 end
 
 return M

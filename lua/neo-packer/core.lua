@@ -4,16 +4,32 @@ M._plugin_map = {}
 M.plugin_runtimepath = {}
 M.plugin_runtimepath_map = {}
 
+local function clean_plugin(plugin)
+	plugin._depend = nil
+	plugin.is_pending = nil
+end
+
+local function clean_lazy_handle(plugin)
+	require("neo-packer.cmd").clean(plugin)
+end
+
+local function register_lazy_plugin(plugin)
+	require("neo-packer.cmd").register(plugin)
+	require("neo-packer.keys").register(plugin)
+	require("neo-packer.event").register(plugin)
+	require("neo-packer.ft").register(plugin)
+	require("neo-packer.colorscheme").register(plugin)
+end
+
 local function config_plugin(plugin)
 	if not plugin then
 		return
 	end
 	M.plugin_runtimepath_map[plugin.path] = nil
-
-	if type(plugin.config) ~= "function" then
-		return
+	if type(plugin.config) == "function" then
+		plugin.config()
+		clean_plugin(plugin)
 	end
-	plugin.config()
 end
 
 local function fix_start_missing_plugin_dir(start, finish)
@@ -39,6 +55,7 @@ local function fix_next_missing_plugin_dir(next)
 			break
 		end
 	end
+
 	for _, data in ipairs(plugins) do
 		config_plugin(data.plugin)
 	end
@@ -243,7 +260,7 @@ local function build_specs(sources)
 	return _specs
 end
 
-function M._load(name)
+function M.load(name)
 	local plugin = M.plugin_map[name]
 	if not plugin then
 		return
@@ -252,22 +269,32 @@ function M._load(name)
 	for _, depend_name in ipairs(plugin._depend) do
 		local dp = M._plugin_map[depend_name]
 		if not dp.loaded then
-			M._load(dp.name)
+			M.load(dp.name)
 		end
 	end
 
-	require("neo-packer.cmd").clean(plugin)
 	pcall(vim.cmd.packadd, name)
 	if type(plugin.config) == "function" then
 		plugin.config()
 	end
+	clean_lazy_handle(plugin)
+	clean_plugin(plugin)
+end
+
+local function create_runtimepath_rewriter(total)
+	local current = 0
+	return function()
+		current = current + 1
+		if current == total then
+			rewrite_runtimepath()
+		end
+	end
 end
 
 --- @param plugins Neo-packer.Plugin[]
-function M.load(plugins)
+function M.packadd(plugins)
 	local specs = build_specs(plugins)
-	local total = #specs
-	local current = 0
+	local runtimepath_rewriter = create_runtimepath_rewriter(#specs)
 	on_source_post()
 	pcall(vim.pack.add, specs, {
 		load = function(plug)
@@ -278,10 +305,8 @@ function M.load(plugins)
 			M._plugin_map[plugin._name] = plugin
 
 			if plugin.startup then
-				plugin._depend = nil
 				if plugin.lazy then
 				end
-				plugin.loaded = true
 				table.insert(M.plugin_runtimepath, plugin.path)
 				M.plugin_runtimepath_map[plugin.path] = {
 					index = #M.plugin_runtimepath,
@@ -289,23 +314,19 @@ function M.load(plugins)
 					total = #vim.fn.glob(plugin.path .. "*/plugin/**/*.lua", true, true),
 					finished = 0,
 				}
+				plugin.loaded = true
+				clean_plugin(plugin)
 			else
 				if plugin.lazy then
-					require("neo-packer.cmd").register(plugin)
-					require("neo-packer.keys").register(plugin)
-					require("neo-packer.event").register(plugin)
-					require("neo-packer.ft").register(plugin)
-					require("neo-packer.colorscheme").register(plugin)
+					register_lazy_plugin(plugin)
 				end
 			end
-
-			current = current + 1
-			if current == total then
-				rewrite_runtimepath()
-			end
+			runtimepath_rewriter()
 		end,
-		confirm = true,
 	})
+	vim.schedule(function()
+		vim.print(M.plugin_map)
+	end)
 end
 
 function M.update() end

@@ -68,7 +68,7 @@ function M.register(plugin)
 	local cmds = plugin.cmd
 	for _, cmd in ipairs(cmds) do
 		register(cmd, function()
-			require("neo-packer.core")._load(plugin.name)
+			require("neo-packer.core").load(plugin.name)
 		end)
 	end
 end
