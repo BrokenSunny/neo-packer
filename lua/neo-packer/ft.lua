@@ -14,6 +14,8 @@ function M.normalize(source)
 	for _, ft in ipairs(source) do
 		if type(ft) == "string" then
 			fts[#fts + 1] = ft
+		else
+			vim.notify("neo-packer: ft: string | string[]", vim.log.levels.ERROR)
 		end
 	end
 

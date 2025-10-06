@@ -4,15 +4,30 @@ M._plugin_map = {}
 M.plugin_runtimepath = {}
 M.plugin_runtimepath_map = {}
 
+--- TODO:
+---      1. name
+---      3. good life cycle
+---      4. error catch
+---      5. plugin.update()
+---      6. plugin.del()
+---      7. Cmd
+---      8. core.lua 分解
+
 -- clean something no need in plugin
 local function clean_plugin(plugin)
-	plugin._depend = nil
 	plugin.is_pending = nil
 end
 
 -- clean lazy plugin load handle
 local function clean_lazy_handle(plugin)
 	require("neo-packer.cmd").clean(plugin)
+end
+
+-- execute plugin.config
+local function config(plugin)
+	if type(plugin.config) == "function" then
+		plugin.config()
+	end
 end
 
 -- register lazy plugin load handle
@@ -22,13 +37,6 @@ local function register_lazy_plugin(plugin)
 	require("neo-packer.event").register(plugin)
 	require("neo-packer.ft").register(plugin)
 	require("neo-packer.colorscheme").register(plugin)
-end
-
--- execute plugin.config
-local function config(plugin)
-	if type(plugin.config) == "function" then
-		plugin.config()
-	end
 end
 
 local function on_plugin_source_post(plugin)
@@ -78,6 +86,7 @@ local function on_source_post()
 			if vim.tbl_count(M.plugin_runtimepath_map) == 0 then
 				return true
 			end
+
 			local path = e.file:match("^(.-)/plugin/")
 			local data = M.plugin_runtimepath_map[path]
 			if data then
@@ -140,7 +149,7 @@ local function get_sorted_depends(spec_map, depend)
 
 	for _, name in ipairs(depend) do
 		local dp = spec_map[name]
-		local priority = dp.data.priority or 50
+		local priority = dp.data.priority
 		if not priority_map[priority] then
 			priority_map[priority] = { name, priority = priority }
 			table.insert(priority_list, priority_map[priority])
@@ -169,7 +178,7 @@ local function set_depend_startup(spec_map, depends)
 	for _, name in ipairs(depends) do
 		local dp = spec_map[name]
 		if not dp.data.startup then
-			table.insert(next, dp.data._depend)
+			table.insert(next, dp.data.depend)
 			dp.data.startup = true
 		else
 		end
@@ -180,44 +189,52 @@ local function set_depend_startup(spec_map, depends)
 	end
 end
 
---- Change single to table<single>
-local function normalize(plugin)
-	plugin.cmd = require("neo-packer.cmd").normalize(plugin.cmd)
-	plugin.ft = require("neo-packer.ft").normalize(plugin.ft)
-	plugin.event = require("neo-packer.event").normalize(plugin.event)
-	plugin.keys = require("neo-packer.keys").normalize(plugin.keys)
-	plugin.colorscheme = require("neo-packer.colorscheme").normalize(plugin.colorscheme)
-	plugin.depend = require("neo-packer.depend").normalize(plugin.depend)
-end
-
-local function low_priority_depend_up_plugin(spec_map, spec, _specs)
+local function low_priority_depend_up_plugin(spec_map, spec, all_specs)
 	if spec.data.is_pending then
 		return
 	end
 
-	local depends = spec.data._depend
+	local depends = spec.data.depend
 	if #depends > 0 then
 		for _, name in ipairs(depends) do
 			local dp_spec = spec_map[name]
-			low_priority_depend_up_plugin(spec_map, dp_spec, _specs)
+			low_priority_depend_up_plugin(spec_map, dp_spec, all_specs)
 		end
 	end
 	spec.data.is_pending = true
-	table.insert(_specs, spec)
+	table.insert(all_specs, spec)
+	spec.data.index = #all_specs
 end
 
-local function get_spec_data(plugin)
-	local data = {
-		_name = plugin[1],
-		startup = true,
-		lazy = nil,
-	}
-	for k, v in pairs(plugin) do
-		if type(k) ~= "number" then
-			data[k] = v
-		end
+local function create_spec_data(plugin)
+	local data = {}
+	local dir, e1 = require("neo-packer.dir").normalize(plugin.dir)
+	if e1 then
+		return
 	end
-	normalize(data)
+	local repo, e2 = require("neo-packer.repo").normalize(plugin[1], dir)
+	if e2 then
+		return
+	end
+	local version, e3 = require("neo-packer.version").normalize(plugin.version)
+	if e3 then
+		return
+	end
+
+	data.startup = true
+	data.lazy = nil
+	data.version = version
+	data.dir = dir
+	data.priority = plugin.priority or 50
+	data.before = type(plugin.before) == "function" and plugin.before or nil
+	data.repo = data.dir and vim.fn.fnamemodify(data.dir, ":t") or repo
+	data.cmd = require("neo-packer.cmd").normalize(plugin.cmd)
+	data.ft = require("neo-packer.ft").normalize(plugin.ft)
+	data.event = require("neo-packer.event").normalize(plugin.event)
+	data.keys = require("neo-packer.keys").normalize(plugin.keys)
+	data.colorscheme = require("neo-packer.colorscheme").normalize(plugin.colorscheme)
+	data.depend = require("neo-packer.depend").normalize(plugin.depend)
+	data.config = type(plugin.config) == "function" and plugin.config or nil
 
 	if #data.cmd > 0 or #data.ft > 0 or #data.event > 0 or #data.colorscheme > 0 or vim.tbl_count(data.keys) > 0 then
 		data.lazy = true
@@ -228,13 +245,36 @@ local function get_spec_data(plugin)
 end
 
 local function create_spec(source)
-	local data = get_spec_data(source)
+	if source.enabled == false then
+		return
+	end
+
+	local data = create_spec_data(source)
+
+	if not data then
+		return
+	end
+
 	local spec = {
-		src = "https://github.com/" .. data._name,
 		data = data,
-		version = source.version,
 	}
+
+	if not data.dir then
+		spec.src = "https://github.com/" .. data.repo
+		spec.version = data.version
+	end
+
 	return spec
+end
+
+local function set_spec_depend_startup(specs, spec_map)
+	for _, spec in ipairs(specs) do
+		local depends = get_sorted_depends(spec_map, spec.data.depend)
+		spec.data.depend = depends
+		if spec.data.startup then
+			set_depend_startup(spec_map, depends)
+		end
+	end
 end
 
 --- @param sources Neo-packer.Plugin[]
@@ -248,49 +288,58 @@ local function build_specs(sources)
 
 	for _, source in ipairs(sources) do
 		local spec = create_spec(source)
-		spec_map[spec.data._name] = spec
+		if spec then
+			spec_map[spec.data.repo] = spec
+			local priority = spec.data.priority
 
-		local priority = spec.data.priority or 50
-		if not spec_priority_map[priority] then
-			spec_priority_map[priority] = { spec, priority = priority }
-			table.insert(spec_priority_list, spec_priority_map[priority])
-		else
-			table.insert(spec_priority_map[priority], spec)
+			if not spec_priority_map[priority] then
+				spec_priority_map[priority] = { spec, priority = priority }
+				table.insert(spec_priority_list, spec_priority_map[priority])
+			else
+				table.insert(spec_priority_map[priority], spec)
+			end
 		end
 	end
+
 	table.sort(spec_priority_list, function(a, b)
 		return a.priority > b.priority
 	end)
+
 	for _, item in ipairs(spec_priority_list) do
 		for _, spec in ipairs(item) do
 			table.insert(specs, spec)
 		end
 	end
 
+	set_spec_depend_startup(specs, spec_map)
+
+	local all_specs = {}
 	for _, spec in ipairs(specs) do
-		local depends = get_sorted_depends(spec_map, spec.data.depend)
-		spec.data._depend = depends
 		if spec.data.startup then
-			set_depend_startup(spec_map, depends)
+			low_priority_depend_up_plugin(spec_map, spec, all_specs)
+		else
+			table.insert(all_specs, spec)
+			spec.data.index = #all_specs
 		end
 	end
 
-	local _specs = {}
-	for _, spec in ipairs(specs) do
-		if spec.data.startup then
-			low_priority_depend_up_plugin(spec_map, spec, _specs)
-		else
-			table.insert(_specs, spec)
-		end
-	end
-	return _specs
+	local repo_specs = vim.iter(all_specs)
+		:filter(function(spec)
+			if spec.data.dir then
+				return false
+			end
+			return true
+		end)
+		:totable()
+
+	return repo_specs, all_specs
 end
 
 local function load_depend(plugin)
-	for _, depend_name in ipairs(plugin._depend) do
+	for _, depend_name in ipairs(plugin.depend) do
 		local dp = M._plugin_map[depend_name]
 		if not dp.loaded then
-			M.load(dp.name)
+			M.load(dp)
 		end
 	end
 end
@@ -299,21 +348,13 @@ function M.load(plugin)
 	load_depend(plugin)
 	pcall(vim.cmd.packadd, plugin.name)
 	config(plugin)
+	plugin.loaded = true
 	clean_lazy_handle(plugin)
 	clean_plugin(plugin)
 end
 
-local function create_runtimepath_rewriter(total)
-	local current = 0
-	return function()
-		current = current + 1
-		if current == total then
-			rewrite_runtimepath()
-		end
-	end
-end
-
 local function register_startup_plugin(plugin)
+	-- no need reigster lazy handle just real set something, eg: real keymaps
 	if plugin.lazy then
 		require("neo-packer.keys").add(plugin.keys)
 	end
@@ -327,27 +368,68 @@ local function register_startup_plugin(plugin)
 	plugin.loaded = true
 end
 
---- @param plugins Neo-packer.Plugin[]
-function M.packadd(plugins)
-	local specs = build_specs(plugins)
-	local runtimepath_rewriter = create_runtimepath_rewriter(#specs)
-	on_source_post()
-	pcall(vim.pack.add, specs, {
-		load = function(plug)
-			local plugin = plug.spec.data
-			plugin.name = plug.spec.name
-			plugin.path = plug.path
-			-- This name is pack name(for pack name find plugin)
-			M.plugin_map[plugin.name] = plugin
-			-- This name is source name(for depend find plugin)
-			M._plugin_map[plugin._name] = plugin
+local function packadd(spec)
+	local plugin = spec.data
 
-			if plugin.startup then
-				register_startup_plugin(plugin)
-			else
-				register_lazy_plugin(plugin)
+	if plugin.dir then
+		plugin.path = plugin.dir
+		plugin.name = vim.fn.fnamemodify(plugin.path, ":t")
+	end
+
+	M.plugin_map[plugin.name] = plugin
+	M._plugin_map[plugin.repo] = plugin
+	if plugin.startup then
+		register_startup_plugin(plugin)
+	else
+		register_lazy_plugin(plugin)
+	end
+end
+
+local function create_finised_handle(total, all_specs)
+	local current = 0
+	return function(plug)
+		current = current + 1
+		if current == total then
+			if #all_specs > plug.spec.data.index then
+				local skip_specs = vim.list_slice(all_specs, plug.spec.data.index + 1, #all_specs)
+				for _, spec in ipairs(skip_specs) do
+					packadd(spec)
+				end
 			end
-			runtimepath_rewriter()
+			rewrite_runtimepath()
+		end
+	end
+end
+
+local function create_skiped_handle(all_specs)
+	local pre_index = 0
+
+	return function(plug)
+		local current_index = plug.spec.data.index
+		if current_index > pre_index + 1 then
+			local skip_specs = vim.list_slice(all_specs, pre_index + 1, current_index - 1)
+			for _, spec in ipairs(skip_specs) do
+				packadd(spec)
+			end
+		end
+		pre_index = current_index
+	end
+end
+
+--- @param plugins Neo-packer.Plugin[]
+function M.add(plugins)
+	local repo_specs, all_specs = build_specs(plugins)
+	local finised_handle = create_finised_handle(#repo_specs, all_specs)
+	local skiped_handle = create_skiped_handle(all_specs)
+	on_source_post()
+	pcall(vim.pack.add, repo_specs, {
+		load = function(plug)
+			local spec = plug.spec
+			spec.data.path = plug.path
+			spec.data.name = plug.spec.name
+			skiped_handle(plug)
+			packadd(spec)
+			finised_handle(plug)
 		end,
 	})
 end

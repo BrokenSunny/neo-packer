@@ -1,17 +1,25 @@
 local M = {}
 
+local function notify()
+	vim.notify("neo-packer: cmd: string | string[]", vim.log.levels.ERROR)
+end
+
 function M.normalize(cmd)
 	local cmds = {}
 
-	if type(cmd) == "string" then
-		cmds = { cmd }
-	end
-
-	if type(cmd) == "table" then
-		for _, c in ipairs(cmd) do
-			if type(c) == "string" then
-				cmds[#cmds + 1] = c
+	if cmd then
+		if type(cmd) == "string" then
+			cmds = { cmd }
+		elseif type(cmd) == "table" then
+			for _, c in ipairs(cmd) do
+				if type(c) == "string" then
+					cmds[#cmds + 1] = c
+				else
+					notify()
+				end
 			end
+		else
+			notify()
 		end
 	end
 

@@ -39,6 +39,7 @@ local M = {}
 --- @field depend? string | string[]
 --- @field colorscheme? Neo-packer.Plugin.Colorscheme
 --- @field version? string|vim.VersionRange
+--- @field name? string
 
 --- @class Neo-packer.Plugin.LocalPlugin: Neo-packer.Plugin.PluginSpec
 --- @field dir string
@@ -52,7 +53,7 @@ local M = {}
 
 --- @param plugins Neo-packer.Plugin[]
 function M.setup(plugins)
-	require("neo-packer.core").packadd(plugins)
+	require("neo-packer.core").add(plugins)
 end
 
 return M
