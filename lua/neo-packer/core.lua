@@ -138,72 +138,7 @@ local function rewrite_runtimepath()
 		end
 	end
 
-	-- 5.
 	vim.opt.runtimepath = new_rtps
-end
-
--- depend need to be sorted by priority(just depend name or not depend spec, Because spec !=== plugin)
-local function get_sorted_depends(spec_map, depend)
-	local priority_map = {}
-	local priority_list = {}
-
-	for _, name in ipairs(depend) do
-		local dp = spec_map[name]
-		local priority = dp.data.priority
-		if not priority_map[priority] then
-			priority_map[priority] = { name, priority = priority }
-			table.insert(priority_list, priority_map[priority])
-		else
-			table.insert(priority_map[priority], name)
-		end
-	end
-	table.sort(priority_list, function(a, b)
-		return a.priority > b.priority
-	end)
-
-	local depends = {}
-	for _, dps in ipairs(priority_list) do
-		for _, name in ipairs(dps) do
-			table.insert(depends, name)
-		end
-	end
-
-	return depends
-end
-
--- When a plugin need to startup, so all depends(ALL) need to marked startup
-local function set_depend_startup(spec_map, depends)
-	local next = {}
-
-	for _, name in ipairs(depends) do
-		local dp = spec_map[name]
-		if not dp.data.startup then
-			table.insert(next, dp.data.depend)
-			dp.data.startup = true
-		else
-		end
-	end
-
-	for _, dps in ipairs(next) do
-		set_depend_startup(spec_map, dps)
-	end
-end
-
-local function low_priority_depend_up_plugin(spec_map, spec, all_specs)
-	if spec.data.is_pending then
-		return
-	end
-
-	local depends = spec.data.depend
-	if #depends > 0 then
-		for _, name in ipairs(depends) do
-			local dp_spec = spec_map[name]
-			low_priority_depend_up_plugin(spec_map, dp_spec, all_specs)
-		end
-	end
-	spec.data.is_pending = true
-	table.insert(all_specs, spec)
-	spec.data.index = #all_specs
 end
 
 local function create_spec_data(plugin)
@@ -225,6 +160,7 @@ local function create_spec_data(plugin)
 	data.lazy = nil
 	data.version = version
 	data.dir = dir
+	data.run = type(plugin.run) == "function" and plugin.run or nil
 	data.priority = plugin.priority or 50
 	data.before = type(plugin.before) == "function" and plugin.before or nil
 	data.repo = data.dir and vim.fn.fnamemodify(data.dir, ":t") or repo
@@ -267,13 +203,92 @@ local function create_spec(source)
 	return spec
 end
 
+-- depend need to be sorted by priority(just depend name or not depend spec, Because spec !=== plugin)
+local function get_sorted_depends(spec_map, depend, skiped_specs)
+	local priority_map = {}
+	local priority_list = {}
+
+	for _, name in ipairs(depend) do
+		local dp = spec_map[name]
+
+		if not dp then
+			dp = create_spec({
+				name,
+			})
+			table.insert(skiped_specs, dp)
+			spec_map[name] = dp
+		end
+
+		if dp then
+			local priority = dp.data.priority
+			if not priority_map[priority] then
+				priority_map[priority] = { name, priority = priority }
+				table.insert(priority_list, priority_map[priority])
+			else
+				table.insert(priority_map[priority], name)
+			end
+		end
+	end
+	table.sort(priority_list, function(a, b)
+		return a.priority > b.priority
+	end)
+
+	local depends = {}
+	for _, dps in ipairs(priority_list) do
+		for _, name in ipairs(dps) do
+			table.insert(depends, name)
+		end
+	end
+
+	return depends, skiped_specs
+end
+
+-- When a plugin need to startup, so all depends(ALL) need to marked startup
+local function set_depend_startup(spec_map, depends)
+	local next = {}
+
+	for _, name in ipairs(depends) do
+		local dp = spec_map[name]
+		if not dp.data.startup then
+			table.insert(next, dp.data.depend)
+			dp.data.startup = true
+		else
+		end
+	end
+
+	for _, dps in ipairs(next) do
+		set_depend_startup(spec_map, dps)
+	end
+end
+
+local function low_priority_depend_up_plugin(spec_map, spec, all_specs)
+	if spec.data.is_pending then
+		return
+	end
+
+	local depends = spec.data.depend
+	if #depends > 0 then
+		for _, name in ipairs(depends) do
+			local dp_spec = spec_map[name]
+			low_priority_depend_up_plugin(spec_map, dp_spec, all_specs)
+		end
+	end
+	spec.data.is_pending = true
+	table.insert(all_specs, spec)
+	spec.data.index = #all_specs
+end
+
 local function set_spec_depend_startup(specs, spec_map)
+	local skiped_specs = {}
 	for _, spec in ipairs(specs) do
-		local depends = get_sorted_depends(spec_map, spec.data.depend)
+		local depends = get_sorted_depends(spec_map, spec.data.depend, skiped_specs)
 		spec.data.depend = depends
 		if spec.data.startup then
 			set_depend_startup(spec_map, depends)
 		end
+	end
+	for _, spec in ipairs(skiped_specs) do
+		table.insert(specs, spec)
 	end
 end
 
@@ -346,7 +361,7 @@ end
 
 function M.load(plugin)
 	load_depend(plugin)
-	pcall(vim.cmd.packadd, plugin.name)
+	vim.cmd.packadd(plugin.name)
 	config(plugin)
 	plugin.loaded = true
 	clean_lazy_handle(plugin)
@@ -416,12 +431,26 @@ local function create_skiped_handle(all_specs)
 	end
 end
 
+local function on_pack_changed()
+	vim.api.nvim_create_autocmd("PackChanged", {
+		pattern = "*",
+		callback = function(e)
+			local p = e.data
+			local run_task = (p.spec.data or {}).run
+			if p.kind ~= "delete" and type(run_task) == "function" then
+				pcall(run_task, p)
+			end
+		end,
+	})
+end
+
 --- @param plugins Neo-packer.Plugin[]
 function M.add(plugins)
 	local repo_specs, all_specs = build_specs(plugins)
 	local finised_handle = create_finised_handle(#repo_specs, all_specs)
 	local skiped_handle = create_skiped_handle(all_specs)
 	on_source_post()
+	on_pack_changed()
 	pcall(vim.pack.add, repo_specs, {
 		load = function(plug)
 			local spec = plug.spec
@@ -432,6 +461,9 @@ function M.add(plugins)
 			finised_handle(plug)
 		end,
 	})
+	-- vim.schedule(function()
+	--    vim.print(M.plugin_map)
+	-- end)
 end
 
 function M.update() end

@@ -40,6 +40,7 @@ local M = {}
 --- @field colorscheme? Neo-packer.Plugin.Colorscheme
 --- @field version? string|vim.VersionRange
 --- @field name? string
+--- @field run? fun()
 
 --- @class Neo-packer.Plugin.LocalPlugin: Neo-packer.Plugin.PluginSpec
 --- @field dir string
