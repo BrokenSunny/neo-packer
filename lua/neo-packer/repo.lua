@@ -1,13 +1,13 @@
 local M = {}
 
-function M.normalize(source, dir)
+function M.normalize(source)
 	local error
 	local repo
 
-	if type(source) == "string" then
-		repo = source
-	else
-		if not dir then
+	if source ~= nil then
+		if type(source) == "string" then
+			repo = source
+		else
 			vim.notify("neo-packer: plugin repo is not a string", vim.log.levels.ERROR)
 			error = true
 		end

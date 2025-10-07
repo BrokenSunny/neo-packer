@@ -144,27 +144,37 @@ end
 
 local function create_spec_data(plugin)
 	local data = {}
-	local dir, e1 = require("neo-packer.dir").normalize(plugin.dir)
-	if e1 then
+	local repo, e2 = require("neo-packer.repo").normalize(plugin[1])
+	if e2 then
 		return
 	end
-	local repo, e2 = require("neo-packer.repo").normalize(plugin[1], dir)
-	if e2 then
+	local name, path, e1 = require("neo-packer.name").normalize(plugin.name, repo)
+	if e1 then
 		return
 	end
 	local version, e3 = require("neo-packer.version").normalize(plugin.version)
 	if e3 then
 		return
 	end
+	-- 1. repo and name
+	-- 2. repo no name
+	-- 3. name no repo
+
+	if repo then
+		data.type = "repo"
+	else
+		data.type = "local"
+	end
 
 	data.startup = true
 	data.lazy = nil
 	data.version = version
-	data.dir = dir
+	data.name = name
+	data.path = path
+	data.repo = repo and repo or name
 	data.run = type(plugin.run) == "function" and plugin.run or nil
 	data.priority = plugin.priority or 50
 	data.before = type(plugin.before) == "function" and plugin.before or nil
-	data.repo = data.dir and vim.fn.fnamemodify(data.dir, ":t") or repo
 	data.cmd = require("neo-packer.cmd").normalize(plugin.cmd)
 	data.ft = require("neo-packer.ft").normalize(plugin.ft)
 	data.event = require("neo-packer.event").normalize(plugin.event)
@@ -196,7 +206,7 @@ local function create_spec(source)
 		data = data,
 	}
 
-	if not data.dir then
+	if data.type == "repo" then
 		spec.src = "https://github.com/" .. data.repo
 		spec.version = data.version
 	end
@@ -341,7 +351,7 @@ local function build_specs(sources)
 
 	local repo_specs = vim.iter(all_specs)
 		:filter(function(spec)
-			if spec.data.dir then
+			if spec.data.type == "local" then
 				return false
 			end
 			return true
@@ -388,10 +398,10 @@ end
 local function packadd(spec)
 	local plugin = spec.data
 
-	if plugin.dir then
-		plugin.path = plugin.dir
-		plugin.name = vim.fn.fnamemodify(plugin.path, ":t")
-	end
+	-- if plugin.type == "local" then
+	-- plugin.path = plugin.dir
+	-- plugin.name = vim.fn.fnamemodify(plugin.path, ":t")
+	-- end
 
 	M.plugin_map[plugin.name] = plugin
 	M._plugin_map[plugin.repo] = plugin
@@ -464,7 +474,7 @@ function M.add(plugins)
 		end,
 	})
 	-- vim.schedule(function()
-	--    vim.print(M.plugin_map)
+	-- 	vim.print(M.plugin_map)
 	-- end)
 end
 
