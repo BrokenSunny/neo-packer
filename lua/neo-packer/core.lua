@@ -6,6 +6,7 @@ M.plugin_runtimepath_map = {}
 
 --- TODO:
 ---      1. name
+---      2. packadd! {name}
 ---      3. good life cycle
 ---      4. error catch
 ---      5. plugin.update()
@@ -373,6 +374,7 @@ local function register_startup_plugin(plugin)
 	if plugin.lazy then
 		require("neo-packer.keys").add(plugin.keys)
 	end
+
 	table.insert(M.plugin_runtimepath, plugin.path)
 	M.plugin_runtimepath_map[plugin.path] = {
 		index = #M.plugin_runtimepath,
