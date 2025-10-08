@@ -18,6 +18,19 @@ local function is_local_plugin(plugin)
 	return plugin.type == "local"
 end
 
+local function is_enabled(plugin)
+	local enabled
+	if plugin.enabled == nil then
+		return true
+	end
+	if type(plugin.enabled) == "function" then
+		return plugin.enabled()
+	end
+	if type(plugin.enabled) == "boolean" then
+		return plugin.enabled
+	end
+end
+
 -- clean something no need in plugin
 local function clean_plugin(plugin)
 	plugin.right_priority_place = nil
@@ -200,7 +213,7 @@ local function create_spec_data(plugin)
 end
 
 local function create_spec(source)
-	if source.enabled == false then
+	if is_enabled(source) then
 		return
 	end
 
