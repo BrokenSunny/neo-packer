@@ -22,22 +22,30 @@ function M.normalize(source)
 	return fts
 end
 
-local function register(plugin)
+function M.register(plugin)
+	local fts = plugin.ft
+	if #fts == 0 then
+		return
+	end
+
+	local group = vim.api.nvim_create_augroup(plugin.name .. ":ft", { clear = false })
 	vim.api.nvim_create_autocmd("FileType", {
-		pattern = plugin.ft,
+		group = group,
 		callback = function()
-			require("neo-packer.core").load(plugin)
+			local ft = vim.o.ft
+			if vim.list_contains(fts, ft) then
+				require("neo-packer.core").load(plugin)
+				return true
+			end
 		end,
-		once = true,
 	})
 end
 
-function M.register(plugin)
-	local fts = plugin.ft
-
-	for _, ft in ipairs(fts) do
-		register(ft)
+function M.clean(plugin)
+	if #plugin.ft == 0 then
+		return
 	end
+	vim.api.nvim_del_augroup_by_name(plugin.name .. ":ft")
 end
 
 return M

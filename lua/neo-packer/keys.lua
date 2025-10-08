@@ -84,7 +84,7 @@ local function is_rhs(rhs)
 	return type(rhs) == "string" or type(rhs) == "function"
 end
 
-local function set_keymap(lhs, rhs, mode, opts, load)
+local function set_keymap(lhs, rhs, mode, opts, set)
 	if not is_rhs(rhs) then
 		vim.notify("rhs must be string or function")
 		return
@@ -93,6 +93,10 @@ local function set_keymap(lhs, rhs, mode, opts, load)
 	if type(mode) ~= "string" then
 		vim.notify("mode must be string or table<string>")
 		return
+	end
+
+	set = set or function(m, l, r, keymap_opts)
+		pcall(vim.keymap.set, m, l, r, keymap_opts)
 	end
 
 	local keymap_opts = get_keymap_opts(opts)
@@ -113,61 +117,52 @@ local function set_keymap(lhs, rhs, mode, opts, load)
 
 	if opts.filetype then
 		collect_filetype_keymap(opts.filetype, function()
-			pcall(vim.keymap.set, mode, lhs, rhs, keymap_opts)
+			set(mode, lhs, rhs, keymap_opts)
 		end)
 		return
 	end
 
 	if opts.event then
 		collect_event_keymap(opts.event, function()
-			pcall(vim.keymap.set, mode, lhs, rhs, keymap_opts)
+			set(mode, lhs, rhs, keymap_opts)
 		end)
 		return
 	end
 
-	if type(load) == "function" then
-		pcall(vim.keymap.set, mode, lhs, function()
-			load()
-			vim.keymap.set(mode, lhs, rhs, keymap_opts)
-			lhs = vim.api.nvim_replace_termcodes(lhs, true, true, true)
-			vim.api.nvim_feedkeys(lhs, "m", false)
-		end, keymap_opts)
-	else
-		pcall(vim.keymap.set, mode, lhs, rhs, keymap_opts)
-	end
+	set(mode, lhs, rhs, keymap_opts)
 end
 
-local function parse_mode(lhs, rhs, modes, parent_opts, load)
+local function parse_mode(lhs, rhs, modes, parent_opts, set)
 	local opts = vim.tbl_extend("force", parent_opts, get_opts(modes))
 	for _, mode in ipairs(modes) do
 		if type(mode) == "string" then
-			set_keymap(lhs, rhs, mode, opts, load)
+			set_keymap(lhs, rhs, mode, opts, set)
 		elseif type(mode) == "table" then
-			parse_mode(lhs, rhs, mode, opts, load)
+			parse_mode(lhs, rhs, mode, opts, set)
 		end
 	end
 end
 
-local function parse_one_rhs(lhs, data, parent_opts, load)
+local function parse_one_rhs(lhs, data, parent_opts, set)
 	local rhs = data[1]
 	local mode = data[2]
 	local opts = vim.tbl_extend("force", parent_opts, get_opts(data))
 
 	if type(mode) == "string" then
-		set_keymap(lhs, rhs, mode, opts, load)
+		set_keymap(lhs, rhs, mode, opts, set)
 	elseif type(mode) == "table" then
-		parse_mode(lhs, rhs, mode, opts, load)
+		parse_mode(lhs, rhs, mode, opts, set)
 	end
 end
 
-local function parse_more_rhs(lhs, data, parent_opts, load)
+local function parse_more_rhs(lhs, data, parent_opts, set)
 	local opts = vim.tbl_extend("force", parent_opts, get_opts(data))
 	for _, value in ipairs(data) do
-		parse_one_rhs(lhs, value, opts, load)
+		parse_one_rhs(lhs, value, opts, set)
 	end
 end
 
-local function parse_keymap(lhs, data, load)
+local function parse_keymap(lhs, data, set)
 	if type(data) ~= "table" then
 		vim.notify("lhs = value must be table")
 		return
@@ -176,18 +171,25 @@ local function parse_keymap(lhs, data, load)
 	local opts = get_opts(data)
 
 	if type(data[1]) == "table" then
-		parse_more_rhs(lhs, data, opts, load)
+		parse_more_rhs(lhs, data, opts, set)
 	elseif is_rhs(data[1]) then
-		parse_one_rhs(lhs, data, opts, load)
+		parse_one_rhs(lhs, data, opts, set)
 	end
 end
 
 function M.register(plugin)
 	local keys = plugin.keys
+	plugin.keys_go_backs = {}
 
 	for lhs, data in pairs(keys) do
-		parse_keymap(lhs, data, function()
-			require("neo-packer.core").load(plugin)
+		parse_keymap(lhs, data, function(mode, l, rhs, keymap_opts)
+			table.insert(plugin.keys_go_backs, function()
+				vim.keymap.set(mode, l, rhs, keymap_opts)
+			end)
+			pcall(vim.keymap.set, mode, lhs, function()
+				require("neo-packer.core").load(plugin)
+				vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(lhs, true, true, true), "m", false)
+			end, keymap_opts)
 		end)
 	end
 end
@@ -195,6 +197,12 @@ end
 function M.add(keys)
 	for lhs, data in pairs(keys) do
 		parse_keymap(lhs, data)
+	end
+end
+
+function M.clean(plugin)
+	for _, callback in ipairs(plugin.keys_go_backs) do
+		callback()
 	end
 end
 

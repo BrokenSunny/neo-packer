@@ -1,27 +1,35 @@
 local M = {}
 M.plugin_map = {}
+M.repo_plugin_map = {}
+M.local_plugin_map = {}
 M._plugin_map = {}
 M.plugin_runtimepath = {}
 M.plugin_runtimepath_map = {}
 
 --- TODO:
----      1. name
----      2. packadd! {name}
----      3. good life cycle
+---      2. option handle
 ---      4. error catch
 ---      5. plugin.update()
 ---      6. plugin.del()
 ---      7. Cmd
 ---      8. core.lua 分解
 
+local function is_local_plugin(plugin)
+	return plugin.type == "local"
+end
+
 -- clean something no need in plugin
 local function clean_plugin(plugin)
-	plugin.is_pending = nil
+	plugin.right_priority_place = nil
 end
 
 -- clean lazy plugin load handle
 local function clean_lazy_handle(plugin)
 	require("neo-packer.cmd").clean(plugin)
+	require("neo-packer.keys").clean(plugin)
+	require("neo-packer.event").clean(plugin)
+	require("neo-packer.ft").clean(plugin)
+	require("neo-packer.colorscheme").clean(plugin)
 end
 
 -- execute plugin.config
@@ -273,7 +281,7 @@ local function set_depend_startup(spec_map, depends)
 end
 
 local function low_priority_depend_up_plugin(spec_map, spec, all_specs)
-	if spec.data.is_pending then
+	if spec.data.right_priority_place then
 		return
 	end
 
@@ -284,7 +292,7 @@ local function low_priority_depend_up_plugin(spec_map, spec, all_specs)
 			low_priority_depend_up_plugin(spec_map, dp_spec, all_specs)
 		end
 	end
-	spec.data.is_pending = true
+	spec.data.right_priority_place = true
 	table.insert(all_specs, spec)
 	spec.data.index = #all_specs
 end
@@ -351,7 +359,7 @@ local function build_specs(sources)
 
 	local repo_specs = vim.iter(all_specs)
 		:filter(function(spec)
-			if spec.data.type == "local" then
+			if is_local_plugin(spec.data) then
 				return false
 			end
 			return true
@@ -372,10 +380,13 @@ end
 
 function M.load(plugin)
 	load_depend(plugin)
+	clean_lazy_handle(plugin)
+	if type(plugin.before) == "function" then
+		plugin.before()
+	end
 	vim.cmd.packadd(plugin.name)
 	config(plugin)
 	plugin.loaded = true
-	clean_lazy_handle(plugin)
 	clean_plugin(plugin)
 end
 
@@ -398,11 +409,11 @@ end
 local function packadd(spec)
 	local plugin = spec.data
 
-	-- if plugin.type == "local" then
-	-- plugin.path = plugin.dir
-	-- plugin.name = vim.fn.fnamemodify(plugin.path, ":t")
-	-- end
-
+	if is_local_plugin(plugin) then
+		M.local_plugin_map[plugin.name] = plugin
+	else
+		M.repo_plugin_map[plugin.name] = plugin
+	end
 	M.plugin_map[plugin.name] = plugin
 	M._plugin_map[plugin.repo] = plugin
 	if plugin.startup then
@@ -478,8 +489,20 @@ function M.add(plugins)
 	-- end)
 end
 
-function M.update() end
+function M.get_all_plugin_names()
+	return vim.tbl_keys(M.plugin_map)
+end
 
-function M.del() end
+function M.get_all_repo_plugin_names()
+	return vim.tbl_keys(M.repo_plugin_map)
+end
+
+function M.update(names, opts)
+	pcall(vim.pack.update, names, opts)
+end
+
+function M.del(names)
+	pcall(vim.pack.del, names)
+end
 
 return M

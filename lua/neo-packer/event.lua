@@ -37,9 +37,14 @@ end
 
 function M.register(plugin)
 	local events = plugin.event
+	if #events == 0 then
+		return
+	end
 
+	local group = vim.api.nvim_create_augroup(plugin.name .. ":event", { clear = false })
 	for _, event in ipairs(events) do
 		local opt = {
+			group = group,
 			callback = function()
 				require("neo-packer.core").load(plugin)
 			end,
@@ -48,6 +53,13 @@ function M.register(plugin)
 		}
 		vim.api.nvim_create_autocmd(event.event, opt)
 	end
+end
+
+function M.clean(plugin)
+	if #plugin.event == 0 then
+		return
+	end
+	vim.api.nvim_del_augroup_by_name(plugin.name .. ":event")
 end
 
 return M
