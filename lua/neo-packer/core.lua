@@ -1,25 +1,16 @@
 local M = {}
 M.plugin_map = {}
+M._plugin_map = {}
 M.repo_plugin_map = {}
 M.local_plugin_map = {}
-M._plugin_map = {}
 M.plugin_runtimepath = {}
 M.plugin_runtimepath_map = {}
-
---- TODO:
----      2. option handle
----      4. error catch
----      5. plugin.update()
----      6. plugin.del()
----      7. Cmd
----      8. core.lua 分解
 
 local function is_local_plugin(plugin)
 	return plugin.type == "local"
 end
 
 local function is_enabled(plugin)
-	local enabled
 	if plugin.enabled == nil then
 		return true
 	end
@@ -87,6 +78,7 @@ local function fix_next_missing_plugin_dir(next)
 
 	for i = next, #M.plugin_runtimepath do
 		local path = M.plugin_runtimepath[i]
+
 		local data = M.plugin_runtimepath_map[path]
 		if data.total == 0 then
 			table.insert(plugins, data)
@@ -100,6 +92,12 @@ local function fix_next_missing_plugin_dir(next)
 	end
 end
 
+--[[
+  Startup plugin need to use packadd! {plugin_name} or rewirite runtimepath
+  to startup.
+  But no direct way to config plugin after the plugin "plugin/**/*.lua" sourced
+  So I use SourcePost to listen all plugin "plugin/**/*.lua" sourced 
+--]]
 local function on_source_post()
 	local first
 	vim.api.nvim_create_autocmd("SourcePost", {
@@ -213,7 +211,7 @@ local function create_spec_data(plugin)
 end
 
 local function create_spec(source)
-	if is_enabled(source) then
+	if not is_enabled(source) then
 		return
 	end
 
@@ -323,6 +321,18 @@ local function set_spec_depend_startup(specs, spec_map)
 		table.insert(specs, spec)
 	end
 end
+
+--[[
+  build repo spec list and all(repo and local) spec list
+  spec list: 
+    1. sort spec by priority 
+      - same priority plugin sort by insert order 
+    2. sort spec.depend by priority 
+    3. the depend of startup plugin need startup 
+      - so all depend of startup plugin need startup 
+    4. the low priority depend of startup plugin need insert before the plugin    
+    5. some plugin in depend but not in spec list, so add to spec list 
+]]
 
 --- @param sources Neo-packer.Plugin[]
 local function build_specs(sources)
@@ -436,6 +446,13 @@ local function packadd(spec)
 	end
 end
 
+--[[
+  local plugins can't in repo spec list 
+  so need to process skiped local plugins
+  if one or more local plugin in all spec list last
+  the last repo plugin need to process the remain local plugins
+--]]
+
 local function create_finised_handle(total, all_specs)
 	local current = 0
 	return function(plug)
@@ -451,6 +468,12 @@ local function create_finised_handle(total, all_specs)
 		end
 	end
 end
+
+--[[
+  local plugins can't in repo spec list 
+  so need to process skiped local plugins
+  the every repo loader need to process the skiped local plugins before  
+--]]
 
 local function create_skiped_handle(all_specs)
 	local pre_index = 0

@@ -194,6 +194,32 @@ function M.register(plugin)
 	end
 end
 
+function M.filetype_load()
+	vim.api.nvim_create_autocmd("FileType", {
+		group = vim.api.nvim_create_augroup("neo-packer-keymap-filetype", {}),
+		pattern = vim.tbl_keys(M.filetypes),
+		callback = function()
+			local callbacks = M.filetypes[vim.bo.filetype] or {}
+			for _, cb in ipairs(callbacks) do
+				cb()
+			end
+		end,
+	})
+end
+
+function M.event_load()
+	for event, callbacks in pairs(M.events) do
+		vim.api.nvim_create_autocmd(event, {
+			group = vim.api.nvim_create_augroup("simple-keymap-event", {}),
+			callback = function()
+				for _, cb in ipairs(callbacks) do
+					cb()
+				end
+			end,
+		})
+	end
+end
+
 function M.add(keys)
 	for lhs, data in pairs(keys) do
 		parse_keymap(lhs, data)
@@ -205,5 +231,8 @@ function M.clean(plugin)
 		callback()
 	end
 end
+
+M.filetype_load()
+M.event_load()
 
 return M
