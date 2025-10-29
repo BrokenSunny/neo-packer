@@ -43,7 +43,7 @@ function M.clean(plugin)
 	if #plugin.colorscheme == 0 then
 		return
 	end
-	vim.api.nvim_del_augroup_by_name(plugin.name .. ":colorscheme")
+	pcall(vim.api.nvim_del_augroup_by_name, plugin.name .. ":colorscheme")
 end
 
 return M

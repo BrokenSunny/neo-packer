@@ -95,9 +95,16 @@ local function set_keymap(lhs, rhs, mode, opts, set)
 		return
 	end
 
-	set = set or function(m, l, r, keymap_opts)
-		pcall(vim.keymap.set, m, l, r, keymap_opts)
-	end
+	set = set
+		or function(m, l, r, keymap_opts, _opts)
+			if opts.context == true and type(r) == "function" then
+				pcall(vim.keymap.set, m, l, function()
+					r(opts)
+				end, keymap_opts)
+			else
+				pcall(vim.keymap.set, m, l, r, keymap_opts)
+			end
+		end
 
 	local keymap_opts = get_keymap_opts(opts)
 
@@ -117,19 +124,19 @@ local function set_keymap(lhs, rhs, mode, opts, set)
 
 	if opts.filetype then
 		collect_filetype_keymap(opts.filetype, function()
-			set(mode, lhs, rhs, keymap_opts)
+			set(mode, lhs, rhs, keymap_opts, opts)
 		end)
 		return
 	end
 
 	if opts.event then
 		collect_event_keymap(opts.event, function()
-			set(mode, lhs, rhs, keymap_opts)
+			set(mode, lhs, rhs, keymap_opts, opts)
 		end)
 		return
 	end
 
-	set(mode, lhs, rhs, keymap_opts)
+	set(mode, lhs, rhs, keymap_opts, opts)
 end
 
 local function parse_mode(lhs, rhs, modes, parent_opts, set)
@@ -182,9 +189,15 @@ function M.register(plugin)
 	plugin.keys_go_backs = {}
 
 	for lhs, data in pairs(keys) do
-		parse_keymap(lhs, data, function(mode, l, rhs, keymap_opts)
+		parse_keymap(lhs, data, function(mode, l, rhs, keymap_opts, opts)
 			table.insert(plugin.keys_go_backs, function()
-				vim.keymap.set(mode, l, rhs, keymap_opts)
+				if opts.context == true and type(rhs) == "function" then
+					vim.keymap.set(mode, l, function()
+						rhs(opts)
+					end, keymap_opts)
+				else
+					vim.keymap.set(mode, l, rhs, keymap_opts)
+				end
 			end)
 			pcall(vim.keymap.set, mode, lhs, function()
 				require("neo-packer.core").load(plugin)
@@ -227,7 +240,7 @@ function M.add(keys)
 end
 
 function M.clean(plugin)
-	for _, callback in ipairs(plugin.keys_go_backs) do
+	for _, callback in ipairs(plugin.keys_go_backs or {}) do
 		callback()
 	end
 end

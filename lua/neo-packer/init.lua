@@ -41,6 +41,7 @@ local M = {}
 --- @field version? string|vim.VersionRange
 --- @field name? string
 --- @field run? fun()
+--- @field lazy? boolean
 
 --- @class Neo-packer.Plugin.LocalPlugin: Neo-packer.Plugin.PluginSpec
 --- @field dir string

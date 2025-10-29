@@ -45,7 +45,7 @@ function M.clean(plugin)
 	if #plugin.ft == 0 then
 		return
 	end
-	vim.api.nvim_del_augroup_by_name(plugin.name .. ":ft")
+	pcall(vim.api.nvim_del_augroup_by_name, plugin.name .. ":ft")
 end
 
 return M

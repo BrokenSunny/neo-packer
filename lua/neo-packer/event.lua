@@ -59,7 +59,7 @@ function M.clean(plugin)
 	if #plugin.event == 0 then
 		return
 	end
-	vim.api.nvim_del_augroup_by_name(plugin.name .. ":event")
+	pcall(vim.api.nvim_del_augroup_by_name, plugin.name .. ":event")
 end
 
 return M

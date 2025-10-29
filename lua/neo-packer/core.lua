@@ -186,7 +186,7 @@ local function create_spec_data(plugin)
 	end
 
 	data.startup = true
-	data.lazy = nil
+	data.lazy = plugin.lazy
 	data.version = version
 	data.name = name
 	data.path = path
@@ -202,7 +202,14 @@ local function create_spec_data(plugin)
 	data.depend = require("neo-packer.depend").normalize(plugin.depend)
 	data.config = type(plugin.config) == "function" and plugin.config or nil
 
-	if #data.cmd > 0 or #data.ft > 0 or #data.event > 0 or #data.colorscheme > 0 or vim.tbl_count(data.keys) > 0 then
+	if
+		data.lazy
+		or #data.cmd > 0
+		or #data.ft > 0
+		or #data.event > 0
+		or #data.colorscheme > 0
+		or vim.tbl_count(data.keys) > 0
+	then
 		data.lazy = true
 		data.startup = nil
 	end
