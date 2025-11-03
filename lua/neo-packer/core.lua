@@ -528,9 +528,6 @@ function M.add(plugins)
       finised_handle(plug)
     end,
   })
-  -- vim.schedule(function()
-  -- 	vim.print(M.plugin_map)
-  -- end)
 end
 
 function M.get_all_plugin_names()
@@ -538,7 +535,9 @@ function M.get_all_plugin_names()
 end
 
 function M.get_all_repo_plugin_names()
-  return vim.tbl_keys(M.repo_plugin_map)
+  local all_repo_plugin_names = vim.tbl_keys(M.repo_plugin_map)
+  table.insert(all_repo_plugin_names, "neo-packer")
+  return all_repo_plugin_names
 end
 
 function M.update(names, opts)
