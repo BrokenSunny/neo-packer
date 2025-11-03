@@ -186,23 +186,25 @@ end
 
 function M.register(plugin)
 	local keys = plugin.keys
-	plugin.keys_go_backs = {}
+	plugin.key_resets = {}
 
 	for lhs, data in pairs(keys) do
-		parse_keymap(lhs, data, function(mode, l, rhs, keymap_opts, opts)
-			table.insert(plugin.keys_go_backs, function()
+		parse_keymap(lhs, data, function(mode, l, r, keymap_opts, opts)
+			table.insert(plugin.key_resets, function()
+				local rhs = r
 				if opts.context == true and type(rhs) == "function" then
-					vim.keymap.set(mode, l, function()
-						rhs(opts)
-					end, keymap_opts)
-				else
-					vim.keymap.set(mode, l, rhs, keymap_opts)
+					rhs = function()
+						r(opts)
+					end
 				end
+				vim.keymap.set(mode, l, rhs, keymap_opts)
 			end)
+			local _keymap_opts = vim.deepcopy(keymap_opts, true)
+			_keymap_opts.expr = true
 			pcall(vim.keymap.set, mode, lhs, function()
 				require("neo-packer.core").load(plugin)
-				vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(lhs, true, true, true), "m", false)
-			end, keymap_opts)
+				vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Ignore>" .. lhs, true, true, true), "i", false)
+			end, _keymap_opts)
 		end)
 	end
 end
@@ -240,7 +242,7 @@ function M.add(keys)
 end
 
 function M.clean(plugin)
-	for _, callback in ipairs(plugin.keys_go_backs or {}) do
+	for _, callback in ipairs(plugin.key_resets or {}) do
 		callback()
 	end
 end
