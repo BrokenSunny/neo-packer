@@ -1,250 +1,250 @@
 local M = {
-	keymaps = {},
-	filetypes = {},
-	events = {},
+  keymaps = {},
+  filetypes = {},
+  events = {},
 }
 
 local KeymapOptsMap = {
-	noremap = true,
-	nowait = true,
-	silent = true,
-	script = true,
-	expr = true,
-	unique = true,
-	callback = true,
-	desc = true,
-	replace_keycodes = true,
-	buffer = true,
-	remap = true,
+  noremap = true,
+  nowait = true,
+  silent = true,
+  script = true,
+  expr = true,
+  unique = true,
+  callback = true,
+  desc = true,
+  replace_keycodes = true,
+  buffer = true,
+  remap = true,
 }
 
 function M.normalize(source)
-	local keys = source
-	if type(source) ~= "table" then
-		keys = {}
-	end
+  local keys = source
+  if type(source) ~= "table" then
+    keys = {}
+  end
 
-	return keys
+  return keys
 end
 
 local function collect_filetype_keymap(filetype, callback)
-	if type(filetype) == "string" then
-		M.filetypes[filetype] = M.filetypes[filetype] or {}
-		table.insert(M.filetypes[filetype], function()
-			callback()
-		end)
-		return
-	end
+  if type(filetype) == "string" then
+    M.filetypes[filetype] = M.filetypes[filetype] or {}
+    table.insert(M.filetypes[filetype], function()
+      callback()
+    end)
+    return
+  end
 
-	if type(filetype) == "table" then
-		for _, ft in ipairs(filetype) do
-			collect_filetype_keymap(ft, callback)
-		end
-	end
+  if type(filetype) == "table" then
+    for _, ft in ipairs(filetype) do
+      collect_filetype_keymap(ft, callback)
+    end
+  end
 end
 
 local function collect_event_keymap(event, callback)
-	if type(event) == "string" then
-		M.events[event] = M.events[event] or {}
-		table.insert(M.events[event], callback)
-		return
-	end
+  if type(event) == "string" then
+    M.events[event] = M.events[event] or {}
+    table.insert(M.events[event], callback)
+    return
+  end
 
-	if type(event) == "table" then
-		for _, e in ipairs(event) do
-			collect_event_keymap(e, callback)
-		end
-	end
+  if type(event) == "table" then
+    for _, e in ipairs(event) do
+      collect_event_keymap(e, callback)
+    end
+  end
 end
 
 local function get_opts(data)
-	local opts = {}
-	for key, value in pairs(data) do
-		if type(key) == "string" then
-			opts[key] = value
-		end
-	end
+  local opts = {}
+  for key, value in pairs(data) do
+    if type(key) == "string" then
+      opts[key] = value
+    end
+  end
 
-	return opts
+  return opts
 end
 
 local function get_keymap_opts(opts)
-	local keymap_opts = {}
-	for key, value in pairs(opts) do
-		if KeymapOptsMap[key] then
-			keymap_opts[key] = value
-		end
-	end
-	return keymap_opts
+  local keymap_opts = {}
+  for key, value in pairs(opts) do
+    if KeymapOptsMap[key] then
+      keymap_opts[key] = value
+    end
+  end
+  return keymap_opts
 end
 
 --- @param rhs any
 --- @return boolean
 local function is_rhs(rhs)
-	return type(rhs) == "string" or type(rhs) == "function"
+  return type(rhs) == "string" or type(rhs) == "function"
 end
 
 local function set_keymap(lhs, rhs, mode, opts, set)
-	if not is_rhs(rhs) then
-		vim.notify("rhs must be string or function")
-		return
-	end
+  if not is_rhs(rhs) then
+    vim.notify("rhs must be string or function")
+    return
+  end
 
-	if type(mode) ~= "string" then
-		vim.notify("mode must be string or table<string>")
-		return
-	end
+  if type(mode) ~= "string" then
+    vim.notify("mode must be string or table<string>")
+    return
+  end
 
-	set = set
-		or function(m, l, r, keymap_opts, _opts)
-			if opts.context == true and type(r) == "function" then
-				pcall(vim.keymap.set, m, l, function()
-					r(opts)
-				end, keymap_opts)
-			else
-				pcall(vim.keymap.set, m, l, r, keymap_opts)
-			end
-		end
+  set = set
+    or function(m, l, r, keymap_opts, _opts)
+      if opts.context == true and type(r) == "function" then
+        pcall(vim.keymap.set, m, l, function()
+          r(opts)
+        end, keymap_opts)
+      else
+        pcall(vim.keymap.set, m, l, r, keymap_opts)
+      end
+    end
 
-	local keymap_opts = get_keymap_opts(opts)
+  local keymap_opts = get_keymap_opts(opts)
 
-	if not M.keymaps[lhs] then
-		M.keymaps[lhs] = {
-			[mode] = {
-				rhs = rhs,
-			},
-		}
-	else
-		M.keymaps[lhs][mode] = {
-			rhs = rhs,
-		}
-	end
+  if not M.keymaps[lhs] then
+    M.keymaps[lhs] = {
+      [mode] = {
+        rhs = rhs,
+      },
+    }
+  else
+    M.keymaps[lhs][mode] = {
+      rhs = rhs,
+    }
+  end
 
-	M.keymaps[lhs][mode] = vim.tbl_extend("force", M.keymaps[lhs][mode], opts)
+  M.keymaps[lhs][mode] = vim.tbl_extend("force", M.keymaps[lhs][mode], opts)
 
-	if opts.filetype then
-		collect_filetype_keymap(opts.filetype, function()
-			set(mode, lhs, rhs, keymap_opts, opts)
-		end)
-		return
-	end
+  if opts.filetype then
+    collect_filetype_keymap(opts.filetype, function()
+      set(mode, lhs, rhs, keymap_opts, opts)
+    end)
+    return
+  end
 
-	if opts.event then
-		collect_event_keymap(opts.event, function()
-			set(mode, lhs, rhs, keymap_opts, opts)
-		end)
-		return
-	end
+  if opts.event then
+    collect_event_keymap(opts.event, function()
+      set(mode, lhs, rhs, keymap_opts, opts)
+    end)
+    return
+  end
 
-	set(mode, lhs, rhs, keymap_opts, opts)
+  set(mode, lhs, rhs, keymap_opts, opts)
 end
 
 local function parse_mode(lhs, rhs, modes, parent_opts, set)
-	local opts = vim.tbl_extend("force", parent_opts, get_opts(modes))
-	for _, mode in ipairs(modes) do
-		if type(mode) == "string" then
-			set_keymap(lhs, rhs, mode, opts, set)
-		elseif type(mode) == "table" then
-			parse_mode(lhs, rhs, mode, opts, set)
-		end
-	end
+  local opts = vim.tbl_extend("force", parent_opts, get_opts(modes))
+  for _, mode in ipairs(modes) do
+    if type(mode) == "string" then
+      set_keymap(lhs, rhs, mode, opts, set)
+    elseif type(mode) == "table" then
+      parse_mode(lhs, rhs, mode, opts, set)
+    end
+  end
 end
 
 local function parse_one_rhs(lhs, data, parent_opts, set)
-	local rhs = data[1]
-	local mode = data[2]
-	local opts = vim.tbl_extend("force", parent_opts, get_opts(data))
+  local rhs = data[1]
+  local mode = data[2]
+  local opts = vim.tbl_extend("force", parent_opts, get_opts(data))
 
-	if type(mode) == "string" then
-		set_keymap(lhs, rhs, mode, opts, set)
-	elseif type(mode) == "table" then
-		parse_mode(lhs, rhs, mode, opts, set)
-	end
+  if type(mode) == "string" then
+    set_keymap(lhs, rhs, mode, opts, set)
+  elseif type(mode) == "table" then
+    parse_mode(lhs, rhs, mode, opts, set)
+  end
 end
 
 local function parse_more_rhs(lhs, data, parent_opts, set)
-	local opts = vim.tbl_extend("force", parent_opts, get_opts(data))
-	for _, value in ipairs(data) do
-		parse_one_rhs(lhs, value, opts, set)
-	end
+  local opts = vim.tbl_extend("force", parent_opts, get_opts(data))
+  for _, value in ipairs(data) do
+    parse_one_rhs(lhs, value, opts, set)
+  end
 end
 
 local function parse_keymap(lhs, data, set)
-	if type(data) ~= "table" then
-		vim.notify("lhs = value must be table")
-		return
-	end
+  if type(data) ~= "table" then
+    vim.notify("lhs = value must be table")
+    return
+  end
 
-	local opts = get_opts(data)
+  local opts = get_opts(data)
 
-	if type(data[1]) == "table" then
-		parse_more_rhs(lhs, data, opts, set)
-	elseif is_rhs(data[1]) then
-		parse_one_rhs(lhs, data, opts, set)
-	end
+  if type(data[1]) == "table" then
+    parse_more_rhs(lhs, data, opts, set)
+  elseif is_rhs(data[1]) then
+    parse_one_rhs(lhs, data, opts, set)
+  end
 end
 
 function M.register(plugin)
-	local keys = plugin.keys
-	plugin.key_resets = {}
+  local keys = plugin.keys
+  plugin.key_resets = {}
 
-	for lhs, data in pairs(keys) do
-		parse_keymap(lhs, data, function(mode, l, r, keymap_opts, opts)
-			table.insert(plugin.key_resets, function()
-				local rhs = r
-				if opts.context == true and type(rhs) == "function" then
-					rhs = function()
-						r(opts)
-					end
-				end
-				vim.keymap.set(mode, l, rhs, keymap_opts)
-			end)
-			local _keymap_opts = vim.deepcopy(keymap_opts, true)
-			_keymap_opts.expr = true
-			pcall(vim.keymap.set, mode, lhs, function()
-				require("neo-packer.core").load(plugin)
-				vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Ignore>" .. lhs, true, true, true), "i", false)
-			end, _keymap_opts)
-		end)
-	end
+  for lhs, data in pairs(keys) do
+    parse_keymap(lhs, data, function(mode, l, r, keymap_opts, opts)
+      table.insert(plugin.key_resets, function()
+        local rhs = r
+        if opts.context == true and type(rhs) == "function" then
+          rhs = function()
+            r(opts)
+          end
+        end
+        vim.keymap.set(mode, l, rhs, keymap_opts)
+      end)
+      local _keymap_opts = vim.deepcopy(keymap_opts, true)
+      _keymap_opts.expr = true
+      pcall(vim.keymap.set, mode, lhs, function()
+        require("neo-packer.core").load(plugin)
+        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Ignore>" .. lhs, true, true, true), "i", false)
+      end, _keymap_opts)
+    end)
+  end
 end
 
 function M.filetype_load()
-	vim.api.nvim_create_autocmd("FileType", {
-		group = vim.api.nvim_create_augroup("neo-packer-keymap-filetype", {}),
-		pattern = vim.tbl_keys(M.filetypes),
-		callback = function()
-			local callbacks = M.filetypes[vim.bo.filetype] or {}
-			for _, cb in ipairs(callbacks) do
-				cb()
-			end
-		end,
-	})
+  vim.api.nvim_create_autocmd("FileType", {
+    group = vim.api.nvim_create_augroup("neo-packer-keymap-filetype", {}),
+    pattern = vim.tbl_keys(M.filetypes),
+    callback = function()
+      local callbacks = M.filetypes[vim.bo.filetype] or {}
+      for _, cb in ipairs(callbacks) do
+        cb()
+      end
+    end,
+  })
 end
 
 function M.event_load()
-	for event, callbacks in pairs(M.events) do
-		vim.api.nvim_create_autocmd(event, {
-			group = vim.api.nvim_create_augroup("simple-keymap-event", {}),
-			callback = function()
-				for _, cb in ipairs(callbacks) do
-					cb()
-				end
-			end,
-		})
-	end
+  for event, callbacks in pairs(M.events) do
+    vim.api.nvim_create_autocmd(event, {
+      group = vim.api.nvim_create_augroup("simple-keymap-event", {}),
+      callback = function()
+        for _, cb in ipairs(callbacks) do
+          cb()
+        end
+      end,
+    })
+  end
 end
 
 function M.add(keys)
-	for lhs, data in pairs(keys) do
-		parse_keymap(lhs, data)
-	end
+  for lhs, data in pairs(keys) do
+    parse_keymap(lhs, data)
+  end
 end
 
 function M.clean(plugin)
-	for _, callback in ipairs(plugin.key_resets or {}) do
-		callback()
-	end
+  for _, callback in ipairs(plugin.key_resets or {}) do
+    callback()
+  end
 end
 
 M.filetype_load()

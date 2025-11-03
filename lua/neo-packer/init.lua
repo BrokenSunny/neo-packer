@@ -55,31 +55,31 @@ local M = {}
 
 --- @param plugins Neo-packer.Plugin[]
 function M.setup(plugins)
-	require("neo-packer.core").add(plugins)
-	vim.api.nvim_create_user_command("NeoPackerUpdate", function(args)
-		require("neo-packer.core").update(args.fargs, { force = args.bang })
-	end, {
-		bang = true,
-		nargs = "*",
-		complete = function()
-			return require("neo-packer.core").get_all_repo_plugin_names()
-		end,
-	})
-	vim.api.nvim_create_user_command("NeoPackerUpdateAll", function(args)
-		local names = require("neo-packer.core").get_all_repo_plugin_names()
-		require("neo-packer.core").update(names, { force = args.bang })
-	end, {
-		bang = true,
-		nargs = 0,
-	})
-	vim.api.nvim_create_user_command("NeoPackerDelete", function(args)
-		require("neo-packer.core").del(args.fargs)
-	end, {
-		nargs = "*",
-		complete = function()
-			return require("neo-packer.core").get_all_repo_plugin_names()
-		end,
-	})
+  require("neo-packer.core").add(plugins)
+  vim.api.nvim_create_user_command("NeoPackerUpdate", function(args)
+    require("neo-packer.core").update(args.fargs, { force = args.bang })
+  end, {
+    bang = true,
+    nargs = "*",
+    complete = function()
+      return require("neo-packer.core").get_all_repo_plugin_names()
+    end,
+  })
+  vim.api.nvim_create_user_command("NeoPackerUpdateAll", function(args)
+    local names = require("neo-packer.core").get_all_repo_plugin_names()
+    require("neo-packer.core").update(names, { force = args.bang })
+  end, {
+    bang = true,
+    nargs = 0,
+  })
+  vim.api.nvim_create_user_command("NeoPackerDelete", function(args)
+    require("neo-packer.core").del(args.fargs)
+  end, {
+    nargs = "*",
+    complete = function()
+      return require("neo-packer.core").get_all_repo_plugin_names()
+    end,
+  })
 end
 
 return M
